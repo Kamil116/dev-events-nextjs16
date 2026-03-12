@@ -56,7 +56,7 @@ const EventSchema = new Schema<Event>(
 
 // Keep slug unique and derived from title only when it changes.
 // Runs on validate so required checks see the generated slug.
-EventSchema.pre<EventDocument>("validate", function () {
+EventSchema.pre<EventDocument>("validate", async function () {
     // Basic non-empty validation for required string fields.
     type StringField =
         | "title"
@@ -109,18 +109,40 @@ EventSchema.pre<EventDocument>("validate", function () {
 
     // Generate slug when new or when title changes.
     if (this.isNew || this.isModified("title")) {
-        this.slug = slugify(this.title);
+        const baseSlug = slugify(this.title);
+        const EventModel = this.constructor as EventModel;
+        let candidate = baseSlug;
+        let suffix = 1;
+
+        // Retry with incremented suffix until a unique slug is found.
+        while (
+            await EventModel.exists({
+                slug: candidate,
+                _id: { $ne: this._id },
+            })
+        ) {
+            candidate = `${baseSlug}-${suffix++}`;
+        }
+
+        this.slug = candidate;
     }
     if (!this.slug) {
         throw new Error("Slug could not be generated");
     }
 
-    // Normalize date to YYYY-MM-DD.
+    // Normalize date to local YYYY-MM-DD without UTC shifting.
     const parsedDate = new Date(this.date);
     if (Number.isNaN(parsedDate.getTime())) {
         throw new Error("Invalid date format");
     }
-    this.date = parsedDate.toISOString().split("T")[0];
+    const year = parsedDate.getFullYear();
+    const month = (parsedDate.getMonth() + 1).toString().padStart(2, "0");
+    const day = parsedDate.getDate().toString().padStart(2, "0");
+    const ymd = `${year}-${month}-${day}`;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+        throw new Error("Invalid date format");
+    }
+    this.date = ymd;
 
     // Normalize time to HH:mm (24h).
     const timeMatch = this.time.match(/^(\d{1,2}):(\d{2})$/);

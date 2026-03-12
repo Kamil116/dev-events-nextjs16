@@ -16,10 +16,6 @@ const cached: MongooseCache =
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
-if (!MONGODB_URI) {
-    throw new Error("MONGODB_URI environment variable is not set");
-}
-
 const options: ConnectOptions = {
     bufferCommands: false, // Let Mongoose surface errors instead of queuing operations when disconnected.
 };
@@ -29,14 +25,25 @@ const options: ConnectOptions = {
  * Call this at the start of each request that touches the database.
  */
 export async function connectToDatabase(): Promise<typeof mongoose> {
+    if (!MONGODB_URI) {
+        throw new Error("MONGODB_URI environment variable is not set");
+    }
+
     if (cached.conn) {
         return cached.conn;
     }
 
     if (!cached.promise) {
-        cached.promise = mongoose.connect(MONGODB_URI!, options);
+        cached.promise = mongoose.connect(MONGODB_URI, options);
     }
 
-    cached.conn = await cached.promise;
-    return cached.conn;
+    try {
+        cached.conn = await cached.promise;
+        return cached.conn;
+    } catch (error) {
+        // Clear cached promise/conn so future calls can retry after a failure.
+        cached.promise = null;
+        cached.conn = null;
+        throw error;
+    }
 }
