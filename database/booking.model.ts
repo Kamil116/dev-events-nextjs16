@@ -35,10 +35,6 @@ const BookingSchema = new Schema<Booking>(
 
 // Ensure referenced event exists and email is valid before saving.
 BookingSchema.pre("save", async function (this: BookingDocument) {
-    if (!emailRegex.test(this.email)) {
-        throw new Error("Email is not valid");
-    }
-
     const exists = await Event.exists({ _id: this.eventId });
     if (!exists) {
         throw new Error("Referenced event does not exist");
